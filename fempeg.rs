@@ -600,7 +600,6 @@ impl MP2Stream {
                     for range(0, 2) |ch| {
                         // Matrixing
                         for range(0, 64) |i| {
-                            let i = i as i32;
                             let mut sum = 0;
                             for range(0, 32) |j| {
                                 sum += self.context.N[i][j] * sample[ch][j][idx]; // 8b * 15b = 23b
