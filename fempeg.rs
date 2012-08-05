@@ -24,6 +24,7 @@
 //      distribution.                                                        
 //
 
+use ao;
 use std;
 
 import None = option::none;
@@ -168,9 +169,9 @@ const D: [i32]/512 = [
 fn QUANT_LUT_STEP1() -> [[i8]/16]/2 {
     [
         // 32, 48, 56, 64, 80, 96,112,128,160,192,224,256,320,384 <- bitrate
-        [   0,  0,  1,  1,  1,  2,  2,  2,  2,  2,  2,  2,  2,  2, 0, 0 ]/_,  // mono
+        [   0,  0,  1,  1,  1,  2,  2,  2,  2,  2,  2,  2,  2,  2, 0, 0 ],  // mono
         // 16, 24, 28, 32, 40, 48, 56, 64, 80, 96,112,128,160,192 <- BR / chan
-        [   0,  0,  0,  0,  0,  0,  1,  1,  1,  2,  2,  2,  2,  2, 0, 0 ]/_   // stereo
+        [   0,  0,  0,  0,  0,  0,  1,  1,  1,  2,  2,  2,  2,  2, 0, 0 ]   // stereo
     ]
 }
 
@@ -198,7 +199,7 @@ fn QUANT_LUT_STEP3() -> [[i8]/32]/2 {
             0x44,0x44,                                                   // SB  0 -  1
             0x34,0x34,0x34,0x34,0x34,0x34,0x34,0x34,0x34,0x34,           // SB  2 - 12
             0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0                      // Padding
-        ]/_,
+        ],
 
         // High-rate table
         [
@@ -207,20 +208,20 @@ fn QUANT_LUT_STEP3() -> [[i8]/32]/2 {
             0x31,0x31,0x31,0x31,0x31,0x31,0x31,0x31,0x31,0x31,0x31,0x31, // SB 11 - 22
             0x20,0x20,0x20,0x20,0x20,0x20,0x20,                          // SB 23 - 29
             0,0                                                          // Padding
-        ]/_
-    ]/_
+        ]
+    ]
 }
 
 // Quantizer lookup, step 4: table row, allocation[] value -> quant table index
 fn QUANT_LUT_STEP4() -> [[i8]/16]/5 {
     [
         // 0   1   2   3   4   5   6   7   8   9  10  11  12  13  14  15
-        [  0,  1,  2, 17,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0 ]/_,
-        [  0,  1,  2,  3,  4,  5,  6, 17,  0,  0,  0,  0,  0,  0,  0,  0 ]/_,
-        [  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 17 ]/_,
-        [  0,  1,  3,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17 ]/_,
-        [  0,  1,  2,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 17 ]/_
-    ]/_
+        [  0,  1,  2, 17,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0 ],
+        [  0,  1,  2,  3,  4,  5,  6, 17,  0,  0,  0,  0,  0,  0,  0,  0 ],
+        [  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 17 ],
+        [  0,  1,  3,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17 ],
+        [  0,  1,  2,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 17 ]
+    ]
 }
 
 // Quantizer specification structure
@@ -262,7 +263,7 @@ fn QUANTIZER_TABLE() -> [QuantizerSpec]/17 {
         QuantizerSpec(16383, 0, 14, 0x0004, 0x0AAB),
         QuantizerSpec(32767, 0, 15, 0x0002, 0x3FFF),
         QuantizerSpec(65535, 0, 16, 0x0001, 0xFFFF)
-    ]/_
+    ]
 }
 
 // Workaround for the fact that some constants are unimplemented in Rust.
@@ -286,28 +287,23 @@ fn MP2Constants() -> MP2Constants {
 
 // Initialization
 
-// FIXME: We need a repeating form to eliminate the allocations here: [ 0, .. ]
-// Note that these are one-time allocations, performed when the library is initialized, and not
-// per-frame.
-// Note also that these are POD allocations, so the garbage collector will ignore them (if the GC
-// ran, which it will not unless the user of the library uses it).
+// FIXME: Eventually these constants should all become "const" values of various sorts, but the
+// Rust compiler doesn't support all of them yet.
 
 struct MP2Context {
     constants: MP2Constants;
-    N: ~[~[i32]];
+    N: [[mut i32]/32]/64;
 }
 
 fn MP2Context() -> MP2Context {
-    let N = do vector::from_fn(64) |i| {
-        do vector::from_fn(32) |j| {
-            (256.0 * cos(((16 + i) * ((j << 1) + 1)) as float * 0.0490873852123405)) as i32
+    let N = [ [ mut 0, ..32 ], ..64 ];
+    for 64.timesi |i| {
+        for 32.timesi |j| {
+            N[i][j] = (256.0 * cos(((16+i) * ((j<<1)+1)) as float * 0.0490873852123405)) as i32;
         }
     };
 
-    return MP2Context {
-        constants: MP2Constants(),
-        N: N
-    }
+    return MP2Context { constants: MP2Constants(), N: N };
 }
 
 struct MP2Stream {
@@ -345,8 +341,8 @@ impl Bitstream {
         self.bits_in_window -= bit_count;
         while self.bits_in_window < 16 {
             let ch = self.frame_pos[0];
-            self.frame_pos = view(self.frame_pos, 1, self.frame_pos.len() - 1);
-            self.bit_window |= (ch as i32) << (16 << self.bits_in_window);
+            self.frame_pos = view(self.frame_pos, 1, self.frame_pos.len());
+            self.bit_window |= (ch as i32) << (16 - self.bits_in_window);
             self.bits_in_window += 8;
         }
         return result;
@@ -380,8 +376,9 @@ impl MP2Stream {
                 sample[2] = 0;
                 return;
             }
-            Some(quantizer) =>
-                q = quantizer
+            Some(quantizer) => {
+                q = quantizer;
+            }
         }
 
         // Resolve the scale factor.
@@ -410,9 +407,9 @@ impl MP2Stream {
             let mut val = adj - (sample[idx] as i32);
             val = (val * (q.Smul as i32)) + (val / (q.Sdiv as i32));
             // Step 2: Apply scale factor.
-            sample[idx] = (((val * (scalefactor >> 12)) +                        // Upper part
-                            ((val * (scalefactor & 4095) + 2048) >> 12)) >>      // Lower part
-                            12);                                                // Scale adjust.
+            sample[idx] = (val * (scalefactor >> 12) +                       // Upper part
+                           ((val * (scalefactor & 4095) + 2048) >> 12)) >>   // Lower part
+                           12;                                               // Scale adjust
         }
     }
 
@@ -421,9 +418,11 @@ impl MP2Stream {
     fn get_sample_rate(frame: &[u8]) -> MP2Result<i32> {
         if frame[0] != 0xff {
             return Error("no valid syncword");
-        } else if frame[1] != 0xfd {
+        }
+        if frame[1] != 0xfd {
             return Error("not MPEG-1 Audio Layer II without redundancy");
-        } else if (frame[2] - 0x10) >= 0xe0 {
+        }
+        if (frame[2] - 0x10) >= 0xe0 {
             return Error("invalid bitrate");
         }
         return OK(SAMPLE_RATES[(frame[2] >> 2) & 3]);
@@ -447,7 +446,7 @@ impl MP2Stream {
         // Read the rest of the header.
         let bit_rate_index_minus1 = bitstream.get_bits(4) - 1;
         if bit_rate_index_minus1 > 13 {
-            return Error("invalid bit rate or \"free format\"");
+            return Error("invalid bit rate or 'free format'");
         }
         let sampling_frequency = bitstream.get_bits(2);
         if sampling_frequency == 3 {
@@ -489,8 +488,10 @@ impl MP2Stream {
 
         // Prepare the quantizer table lookups.
         let mut table_idx = if mode == Mono { 0 } else { 1 };
-        table_idx = self.context.constants.QUANT_LUT_STEP1[table_idx][bit_rate_index_minus1] as i32;
-        table_idx = self.context.constants.QUANT_LUT_STEP2[table_idx][sampling_frequency] as i32;
+        let QUANT_LUT_STEP1 = &self.context.constants.QUANT_LUT_STEP1;
+        let QUANT_LUT_STEP2 = &self.context.constants.QUANT_LUT_STEP2;
+        table_idx = QUANT_LUT_STEP1[table_idx][bit_rate_index_minus1] as i32;
+        table_idx = QUANT_LUT_STEP2[table_idx][sampling_frequency] as i32;
         let sblimit = table_idx & 63;
         table_idx >>= 6;
         if bound > sblimit {
@@ -499,10 +500,9 @@ impl MP2Stream {
 
         // Read the allocation information.
         let allocation = [ [ mut None, ..32 ], [ mut None, ..32 ] ];
-
         let num_channels = if mode == Mono { 1 } else { 2 };
         for bound.timesi |sb| {
-            for num_channels.timesi |ch| {
+            for 2.timesi |ch| {
                 allocation[ch][sb] = self.read_allocation(bitstream, sb as i32, table_idx);
             }
         }
@@ -513,9 +513,7 @@ impl MP2Stream {
         }
 
         // Read scale factor selector information.
-        // FIXME: Again, we could use an array repeat syntax here.
         let scfsi = [ [ mut 0, ..32 ], [ mut 0, ..32 ] ];
-
         for sblimit.timesi |sb| {
             for num_channels.timesi |ch| {
                 if allocation[ch][sb].is_some() {
@@ -602,12 +600,13 @@ impl MP2Stream {
                     for 2.timesi |ch| {
                         // Matrixing
                         for 64.timesi |i| {
-                            let mut sum: i32 = 0;
+                            let i = i as i32;
+                            let mut sum = 0;
                             for 32.timesi |j| {
                                 sum += self.context.N[i][j] * sample[ch][j][idx]; // 8b * 15b = 23b
-                                // Intermediate value is 28-bit (23 + 5), clamp to 14 bit.
-                                self.V[ch][table_idx + 1] = (sum + 8192) >> 14;
                             }
+                            // Intermediate value is 28-bit (23 + 5), clamp to 14 bit.
+                            self.V[ch][table_idx + i] = (sum + 8192) >> 14;
                         }
 
                         // Construction of U
@@ -626,6 +625,7 @@ impl MP2Stream {
                         }
 
                         // Output samples.
+                        let mut nonzero = false;
                         for 32.timesi |j| {
                             let mut sum: i32 = 0;
                             for 16.timesi |i| {
@@ -639,6 +639,9 @@ impl MP2Stream {
                                 sum = 32767;
                             }
                             pcm[(idx << 6) | (j << 1) | ch] = sum as i16;
+                            if sum != 0 {
+                                nonzero = true;
+                            }
                         }
                     }   // End of synthesis channel loop.
                 }   // End of synthesis sub-block loop.
@@ -655,8 +658,8 @@ impl MP2Stream {
 // Entry point
 
 fn main(args: ~[UniqueString]) {
-    if args.len() < 3 {
-        println(fmt!("usage: %s file.mp2 out.pcm", args[0]));
+    if args.len() < 2 {
+        println(fmt!("usage: %s file.mp2", args[0]));
         return;
     }
 
@@ -667,16 +670,14 @@ fn main(args: ~[UniqueString]) {
     };
     let mut bytes = view(bytes, 0, bytes.len());
 
-    let result = io::file_writer(args[2], ~[ io::create, io::truncate ]);
-    let writer;
-    match result {
-        OK(w) => writer = w,
-        Error(e) => { println(e); return; }
-    }
-
     let context = MP2Context();
     let stream = MP2Stream(&context);
-    println(fmt!("sample rate is %d", stream.get_sample_rate(bytes).get() as int));
+    let sample_rate = stream.get_sample_rate(bytes).get() as int;
+    println(fmt!("sample rate is %d", sample_rate));
+
+    let ao = ao::AO();
+    let sample_format = ao::SampleFormat(16, sample_rate as i32, 2, ao::Little);
+    let device = ao.open_live(ao.default_driver_id(), &sample_format);
 
     let pcm = [ mut 0, ..2304 ];    // FIXME: Rust compiler should accept (SAMPLES_PER_FRAME*2).
     loop {
@@ -688,13 +689,7 @@ fn main(args: ~[UniqueString]) {
         }
 
         // Write the bytes, in little-endian.
-        // FIXME: Polymorphic write might be nice. This conversion is unfortunate.
-        let output = [ mut 0, ..4608 ];
-        for pcm.len().timesi |i| {
-            output[i*2]   = (pcm[i] & 0xff) as u8;
-            output[i*2+1] = (pcm[i] >> 8) as u8;
-        }
-        writer.write(bytes);
+        device.play(pcm);
 
         if bytes.len() < frame_size { return; }
         bytes = view(bytes, frame_size, bytes.len());
