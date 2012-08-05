@@ -297,8 +297,8 @@ struct MP2Context {
 
 fn MP2Context() -> MP2Context {
     let N = [ [ mut 0, ..32 ], ..64 ];
-    for 64.timesi |i| {
-        for 32.timesi |j| {
+    for range(0, 64) |i| {
+        for range(0, 32) |j| {
             N[i][j] = (256.0 * cos(((16+i) * ((j<<1)+1)) as float * 0.0490873852123405)) as i32;
         }
     };
@@ -395,14 +395,14 @@ impl MP2Stream {
             sample[2] = val / adj;
         } else {
             // Decode direct samples.
-            for 3.timesi |idx| {
+            for range(0, 3) |idx| {
                 sample[idx] = bitstream.get_bits(q.cw_bits as i32);
             }
         }
 
         // Postmultiply samples.
         adj = ((adj + 1) >> 1) - 1;
-        for 3.timesi |idx| {
+        for range(0, 3) |idx| {
             // Step 1: Renormalization to [-1..1].
             let mut val = adj - (sample[idx] as i32);
             val = (val * (q.Smul as i32)) + (val / (q.Sdiv as i32));
@@ -501,8 +501,8 @@ impl MP2Stream {
         // Read the allocation information.
         let allocation = [ [ mut None, ..32 ], [ mut None, ..32 ] ];
         let num_channels = if mode == Mono { 1 } else { 2 };
-        for bound.timesi |sb| {
-            for 2.timesi |ch| {
+        for range(0, bound) |sb| {
+            for range(0, 2) |ch| {
                 allocation[ch][sb] = self.read_allocation(bitstream, sb as i32, table_idx);
             }
         }
@@ -514,8 +514,8 @@ impl MP2Stream {
 
         // Read scale factor selector information.
         let scfsi = [ [ mut 0, ..32 ], [ mut 0, ..32 ] ];
-        for sblimit.timesi |sb| {
-            for num_channels.timesi |ch| {
+        for range(0, sblimit) |sb| {
+            for range(0, num_channels) |ch| {
                 if allocation[ch][sb].is_some() {
                     scfsi[ch][sb] = bitstream.get_bits(2);
                 }
@@ -527,8 +527,8 @@ impl MP2Stream {
 
         // Read scale factors.
         let scalefactor = [ [ [ mut 0, 0, 0 ], ..32 ], [ [ mut 0, 0, 0 ], ..32 ] ];
-        for sblimit.timesi |sb| {
-            for num_channels.timesi |ch| {
+        for range(0, sblimit) |sb| {
+            for range(0, num_channels) |ch| {
                 if allocation[ch][sb].is_some() {
                     match scfsi[ch][sb] {
                         0 => {
@@ -559,7 +559,7 @@ impl MP2Stream {
                 }
             }
             if mode == Mono {
-                for 3.timesi |part| {
+                for range(0, 3) |part| {
                     scalefactor[1][sb][part] = scalefactor[0][sb][part];
                 }
             }
@@ -567,11 +567,11 @@ impl MP2Stream {
 
         // Perform coefficient input and reconstruction.
         let sample = [ [ [ mut 0, 0, 0 ], ..32 ], [ [ mut 0, 0, 0 ], ..32 ] ];
-        for 3.timesi |part| {       // For each part...
+        for range(0, 3) |part| {    // For each part...
             for 4.times {           // For each granule...
                 // Read the samples.
-                for bound.timesi |sb| {
-                    for 2.timesi |ch| {
+                for range(0, bound) |sb| {
+                    for range(0, 2) |ch| {
                         self.read_samples(bitstream, allocation[ch][sb], scalefactor[ch][sb][part],
                                           sample[ch][sb]);
                     }
@@ -579,30 +579,30 @@ impl MP2Stream {
                 for range(bound, sblimit) |sb| {
                     self.read_samples(bitstream, allocation[0][sb], scalefactor[0][sb][part],
                                       sample[0][sb]);
-                    for 3.timesi |idx| {
+                    for range(0, 3) |idx| {
                         sample[1][sb][idx] = sample[0][sb][idx];
                     }
                 }
-                for 2.timesi |ch| {
+                for range(0, 2) |ch| {
                     for range(sblimit, 32) |sb| {
-                        for 3.timesi |idx| {
+                        for range(0, 3) |idx| {
                             sample[ch][sb][idx] = 0;
                         }
                     }
                 }
 
                 // Synthesis loop
-                for 3.timesi |idx| {
+                for range(0, 3) |idx| {
                     // Shifting step
                     table_idx = (self.Voffs - 64) & 1023;
                     self.Voffs = table_idx;
 
-                    for 2.timesi |ch| {
+                    for range(0, 2) |ch| {
                         // Matrixing
-                        for 64.timesi |i| {
+                        for range(0, 64) |i| {
                             let i = i as i32;
                             let mut sum = 0;
-                            for 32.timesi |j| {
+                            for range(0, 32) |j| {
                                 sum += self.context.N[i][j] * sample[ch][j][idx]; // 8b * 15b = 23b
                             }
                             // Intermediate value is 28-bit (23 + 5), clamp to 14 bit.
@@ -610,25 +610,22 @@ impl MP2Stream {
                         }
 
                         // Construction of U
-                        for 8.timesi |i| {
-                            let i = i as i32;
-                            for 32.timesi |j| {
-                                let j = j as i32;
+                        for range(0, 8) |i| {
+                            for range(0, 32) |j| {
                                 self.U[(i<<6)+j]    = self.V[ch][(table_idx+(i<<7)+j)    & 1023];
                                 self.U[(i<<6)+j+32] = self.V[ch][(table_idx+(i<<7)+j+96) & 1023];
                             }
                         }
 
                         // Apply window.
-                        for 512.timesi |i| {
+                        for range(0, 512) |i| {
                             self.U[i] = (self.U[i] * D[i] + 32) >> 6;
                         }
 
                         // Output samples.
-                        let mut nonzero = false;
-                        for 32.timesi |j| {
+                        for range(0, 32) |j| {
                             let mut sum: i32 = 0;
-                            for 16.timesi |i| {
+                            for range(0, 16) |i| {
                                 sum -= self.U[(i << 5) + j];
                             }
                             sum = (sum + 8) >> 4;
@@ -639,9 +636,6 @@ impl MP2Stream {
                                 sum = 32767;
                             }
                             pcm[(idx << 6) | (j << 1) | ch] = sum as i16;
-                            if sum != 0 {
-                                nonzero = true;
-                            }
                         }
                     }   // End of synthesis channel loop.
                 }   // End of synthesis sub-block loop.
